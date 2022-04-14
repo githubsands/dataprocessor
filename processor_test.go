@@ -73,13 +73,13 @@ func TestProcessing(t *testing.T) {
 }
 */
 
-func TestAddSensor(t *testing.T) {
+func TestAddSensor(t *testing.T) { // DOESNT WORK
 	cfg := new(config)
 	cfg.Samples = 15
-	cfg.BatchDuration = 360000
+	cfg.BatchDuration = "360000s"
 
 	sensors := []string{"hum-1", "hum-2", "temp-1", "temp-2"}
-	p := NewProcessor(context.Background(), cfg.Samples, time.Duration(cfg.BatchDuration), nil)
+	p := NewProcessor(context.Background(), cfg.Samples, cfg.BatchDuration, nil)
 	for _, v := range sensors {
 		go p.addSensor(context.Background(), "temp", v)
 	}
@@ -123,6 +123,24 @@ func newStringTest(s string) stringTest {
 	return stringTest{whole: s, array: sa}
 }
 
+func TestDispatchTemperatureParse(t *testing.T) {
+	cfg := new(config)
+	cfg.Samples = 15
+	cfg.BatchDuration = "360000s"
+	p := NewProcessor(context.Background(), cfg.Samples, cfg.BatchDuration, nil)
+	s := strings.Split("thermometer temp-1", " ")
+	err := p.dispatchTemperature(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Failed to parse thermometer temp-1")
+	}
+
+	s = strings.Split("2007-04-05T22:00 temp-1 72.4", " ") // does not work
+	err = p.dispatchTemperature(context.Background(), s)
+	if err != nil {
+		t.Fatalf("2007-04-05T22:00 temp-1 72.4")
+	}
+}
+
 func TestDispatchTemperatures(t *testing.T) {
 	msgs := []string{
 		"thermometer temp-1",
@@ -136,17 +154,17 @@ func TestDispatchTemperatures(t *testing.T) {
 
 	cfg := new(config)
 	cfg.Samples = 15
-	cfg.BatchDuration = 360000
+	cfg.BatchDuration = "360000s"
 
-	p := NewProcessor(context.Background(), cfg.Samples, time.Duration(cfg.BatchDuration), nil)
+	p := NewProcessor(context.Background(), cfg.Samples, cfg.BatchDuration, nil)
 
-	var success bool = true
+	var err error
 	for i, v := range msgsTests {
 		fmt.Println("Testing", v.array)
-		success = p.dispatchTemperature(context.Background(), v.array)
+		err = p.dispatchTemperature(context.Background(), v.array)
 		time.Sleep(5 * time.Second)
-		if !success {
-			t.Fatalf("Failed at index %v with dispatched message: %v\nBatches that exist are %v with total keys %v\n", i, v.array, spew.Sdump(p.sensors), len(p.sensors))
+		if err != nil {
+			t.Fatalf("Failed at index %v with dispatched message: %v\nBatches that exist are %v with total keys %v\nReceieved error %v", i, v.array, p.sensors, len(p.sensors), err.Error())
 		}
 	}
 
@@ -155,10 +173,28 @@ func TestDispatchTemperatures(t *testing.T) {
 	time.Sleep(2 * time.Second)
 }
 
-func TestDispatchHumidity(t *testing.T) {
+func TestDispatchHumidityParse(t *testing.T) {
+	cfg := new(config)
+	cfg.Samples = 15
+	cfg.BatchDuration = "360000s"
+	p := NewProcessor(context.Background(), cfg.Samples, cfg.BatchDuration, nil)
+	s := strings.Split("humidity hum-1", " ")
+	err := p.dispatchHumidity(context.Background(), s)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	s = strings.Split("2007-04-05T22:00 hum-1 72.4", " ") // does not work
+	err = p.dispatchHumidity(context.Background(), s)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
+func TestDispatchHumidities(t *testing.T) {
 	msgs := []string{
-		"humidity hum-1\n",
-		"2007-04-05T22:00 hum-1 72.4\n",
+		"humidity hum-1",
+		"2007-04-05T22:00 hum-1 72.4",
 	}
 
 	msgsTests := make([]stringTest, 0)
@@ -168,15 +204,15 @@ func TestDispatchHumidity(t *testing.T) {
 
 	cfg := new(config)
 	cfg.Samples = 15
-	cfg.BatchDuration = 360000
+	cfg.BatchDuration = "360000s"
 
-	p := NewProcessor(context.Background(), cfg.Samples, time.Duration(cfg.BatchDuration), nil)
+	p := NewProcessor(context.Background(), cfg.Samples, cfg.BatchDuration, nil)
 
-	var success bool = true
+	var err error
 	for i, v := range msgsTests {
 		fmt.Println("Testing", v.array)
-		success = p.dispatchHumidity(context.Background(), v.array)
-		if !success {
+		err = p.dispatchHumidity(context.Background(), v.array)
+		if err != nil {
 			t.Fatalf("Failed at index %v with dispatched message: %v\nSensors exist are %v\n", i, v.array, spew.Sdump(p.sensors))
 		}
 	}

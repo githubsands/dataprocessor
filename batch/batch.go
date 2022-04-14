@@ -1,4 +1,4 @@
-package main
+package batch
 
 import (
 	"container/ring"
@@ -15,7 +15,7 @@ const (
 	humidity    = "hum"
 )
 
-type batch struct {
+type Batch struct {
 	m     sync.Mutex
 	state string
 
@@ -27,7 +27,7 @@ type batch struct {
 
 	tick time.Ticker // TODO: Could just use a context timeout here
 
-	batch *ring.Ring // TODO: Change to just a chan or other methods noted in the README
+	Batch *ring.Ring // TODO: Change to just a chan or other methods noted in the README
 
 	consumer chan float64 // ... TODO: Could just use a channel instead of ring buffer
 	producer chan string
@@ -37,12 +37,12 @@ type batch struct {
 	cancel func()
 }
 
-func newBatch(ctx context.Context, name string, sensor string, samples float64, reference float64, length time.Duration, cleanup chan<- string) *batch {
-	b := new(batch)
+func NewBatch(ctx context.Context, name string, sensor string, samples float64, reference float64, length time.Duration, cleanup chan<- string) *Batch {
+	b := new(Batch)
 	b.tick = *time.NewTicker(length)
 	b.name = sensor
 	b.sensor = name
-	b.batch = ring.New(int(samples))
+	b.Batch = ring.New(int(samples))
 	b.currentSamples = 0
 	b.samples = samples
 	b.reference = reference
@@ -55,7 +55,11 @@ func newBatch(ctx context.Context, name string, sensor string, samples float64, 
 	return b
 }
 
-func (b *batch) run(ctx context.Context) {
+func (b *Batch) Consume(val float64) {
+	b.consumer <- val
+}
+
+func (b *Batch) run(ctx context.Context) {
 	defer close(b.consumer)
 	defer b.tick.Stop()
 
@@ -68,9 +72,10 @@ func (b *batch) run(ctx context.Context) {
 					b.process(b.reference)
 					return
 				}
-				b.batch.Value = tempReading
-				b.batch.Next()
+				b.Batch.Value = tempReading
+				b.Batch.Next()
 				b.m.Lock()
+				fmt.Println("FUUUCK-3", tempReading)
 				b.currentSamples++
 				b.m.Unlock()
 			case <-b.tick.C:
@@ -86,20 +91,21 @@ func (b *batch) run(ctx context.Context) {
 	}
 }
 
-func (b *batch) process(reference float64) {
+func (b *Batch) process(reference float64) {
 	b.m.Lock()
 	var vals []float64
 	b.state = "processing"
-	for i := 0; i < b.batch.Len(); i++ {
-		val := b.batch
+	for i := 0; i < b.Batch.Len(); i++ {
+		val := b.Batch
 		vals = append(vals, val.Value.(float64)) // TODO: I assume this uses reflection so not very optimal
-		_ = b.batch.Prev()
+		_ = b.Batch.Prev()
 	}
 
 	var output string
 	switch b.sensor {
 	case temperature:
 		output = b.processTemperature(vals, reference)
+		fmt.Println("PROCESSING")
 	case humidity:
 		output = b.processHumidity(vals, reference)
 	default:
@@ -116,8 +122,8 @@ func (b *batch) process(reference float64) {
 	return
 }
 
-//TODO: batch should only process - not be aware which sensor its processing. possibly take in a first class function here
-func (b *batch) processTemperature(temps []float64, temperatureReference float64) string {
+//TODO: Batch should only process - not be aware which sensor its processing. possibly take in a first class function here
+func (b *Batch) processTemperature(temps []float64, temperatureReference float64) string {
 	temperatureDifferenceLow := temperatureReference - temperatureReference*0.5
 	temperatureDifferenceHigh := temperatureReference + temperatureReference*0.5
 	mean, std := gonum.MeanStdDev(temps, nil)
@@ -137,8 +143,8 @@ func (b *batch) processTemperature(temps []float64, temperatureReference float64
 	return fmt.Sprintf(b.name + " " + precision)
 }
 
-//TODO: batch should only process - not be aware which sensor its processing. possibly take in a first class function here
-func (b *batch) processHumidity(humds []float64, humidityReference float64) string {
+//TODO: Batch should only process - not be aware which sensor its processing. possibly take in a first class function here
+func (b *Batch) processHumidity(humds []float64, humidityReference float64) string {
 	humidityDifferenceLow := humidityReference - humidityReference*0.1
 	humidityDifferenceHigh := humidityReference + humidityReference*0.1
 	fmt.Println(humidityDifferenceHigh)
@@ -153,6 +159,6 @@ func (b *batch) processHumidity(humds []float64, humidityReference float64) stri
 	return fmt.Sprintf(b.name + " " + status)
 }
 
-func (b *batch) produce(s string) {
+func (b *Batch) produce(s string) {
 	b.producer <- s
 }

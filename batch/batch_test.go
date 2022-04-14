@@ -1,4 +1,4 @@
-package main
+package batch
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestBatchRunTemp(t *testing.T) {
 	var cleanup = make(chan string, 1)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	batch := newBatch(context.TODO(), "temp-1", "temp", sampleSize, 40.0, duration, cleanup)
+	batch := NewBatch(context.TODO(), "temp", "temp-1", sampleSize, 40.0, duration, cleanup)
 	batch.consumer <- 40.0
 	batch.consumer <- 40.0
 	batch.consumer <- 40.0
@@ -27,7 +27,7 @@ func TestBatchRunTemp(t *testing.T) {
 	batch.consumer <- 40.0 // these inputs exceed the sampleSize so they will not make it to processing
 
 	var actual1, actual2 string
-Receive:
+Loop:
 	for {
 		select {
 		case outcome := <-batch.producer:
@@ -37,11 +37,13 @@ Receive:
 			actual2 = cleaned
 			fmt.Println("Received", actual2, "from producer")
 			wg.Done()
-			break Receive
+			break Loop
 		}
 	}
 
+	t.Logf("Waiting")
 	wg.Wait()
+	t.Logf("Waiting")
 
 	expected1 := "temp-1 ultra precise"
 	if expected1 != actual1 {
@@ -58,7 +60,7 @@ Receive:
 	testBatchChannelCleanup(batch, t)
 }
 
-func testBatchChannelCleanup(batch *batch, t *testing.T) {
+func testBatchChannelCleanup(batch *Batch, t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fatalf("Recover should of not been nil due to having send on a closed channel")
@@ -73,7 +75,7 @@ func TestBatchRunHumidity(t *testing.T) {
 	var duration time.Duration = 40 * time.Second
 	var sampleSize = 5.0
 	var cleanup = make(chan string, 1)
-	batch := newBatch(context.TODO(), "hum-1", "hum", sampleSize, 40.0, duration, cleanup)
+	batch := NewBatch(context.TODO(), "hum-1", "hum", sampleSize, 40.0, duration, cleanup)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go batch.run(context.TODO())
@@ -107,7 +109,7 @@ func TestBatchRunHumidity(t *testing.T) {
 */
 
 func TestProcessTemperatureMath(t *testing.T) {
-	b := new(batch)
+	b := new(Batch)
 	b.name = "temp-1"
 	floats := []float64{70.0, 70.0, 70.0, 70.0}
 	actual := b.processTemperature(floats, 70)
@@ -132,7 +134,7 @@ func TestProcessTemperatureMath(t *testing.T) {
 }
 
 func TestProcessHumidityMath(t *testing.T) {
-	b := new(batch)
+	b := new(Batch)
 	b.name = "hum-1"
 	humids := []float64{40.0, 40.0, 40.0, 40.0}
 	actual := b.processHumidity(humids, 40.0)

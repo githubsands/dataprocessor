@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"container/list"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"data-processing/batch"
 )
 
 const (
@@ -21,28 +24,16 @@ type reference struct {
 	m   sync.Mutex
 	set bool
 
-	degrees  int
-	humidity int
+	temperature float64
+	humidity    float64
 }
 
-func (r reference) new(degree, humidity string) error {
-	degreeNum, err := strconv.Atoi(degree)
-	if err != nil {
-		return err
-	}
-
-	humidityNum, err := strconv.Atoi(humidity)
-	if err != nil {
-		return err
-	}
-
+func (r reference) new(degree, humidity float64) {
 	r.m.Lock()
-	r.degrees = degreeNum
-	r.humidity = humidityNum
+	r.temperature = degree
+	r.humidity = humidity
 	r.set = true
 	r.m.Unlock()
-
-	return nil
 }
 
 type Processor struct {
@@ -58,17 +49,22 @@ type Processor struct {
 	preProcessedBuffer *list.List
 	file               io.Reader
 
-	sensors map[string]*batch
+	sensors map[string]*batch.Batch
 }
 
-func NewProcessor(ctx context.Context, samples float64, batchDuration time.Duration, file io.Reader) *Processor {
+func NewProcessor(ctx context.Context, samples float64, batchDuration string, file io.Reader) *Processor {
 	tp := new(Processor)
 	tp.samples = samples
-	tp.preProcessedBuffer = list.New()
-	tp.batchDuration = batchDuration
+
+	duration, err := time.ParseDuration(batchDuration)
+	if err != nil {
+		panic(err)
+	}
+
+	tp.batchDuration = duration
 	tp.set = false
 	tp.done = make(chan struct{}, 1)
-	tp.sensors = make(map[string]*batch)
+	tp.sensors = make(map[string]*batch.Batch)
 	tp.file = file
 	tp.cleanup = make(chan string, 1)
 
@@ -77,27 +73,49 @@ func NewProcessor(ctx context.Context, samples float64, batchDuration time.Durat
 	return tp
 }
 
+func (tp *Processor) updateReference(s []string) {
+	temperature, err := strconv.ParseFloat(s[1], 64)
+	if err != nil {
+		panic(err)
+	}
+	humidity, err := strconv.ParseFloat(s[2], 64)
+	if err != nil {
+		panic(err)
+	}
+
+	tp.reference.temperature = temperature
+	tp.reference.humidity = humidity
+	tp.reference.set = true
+}
+
 func (tp *Processor) checkExistingSensor(s string) bool {
 	_, ok := tp.sensors[s]
-	fmt.Println("Checking existing sensor")
 	return ok
 }
 
-func (tp *Processor) sendLogs(s string, val float64) bool {
-	var success bool = true
+func (tp *Processor) sendLogs(s string, val float64) error {
+	var err error
 	batch, ok := tp.sensors[s]
 	if ok {
-		batch.consumer <- val
-		return success
+		batch.Consume(val)
+		return err
 	}
 
-	return false
+	return errors.New("Wasn't able to send log")
 }
 
 func (tp *Processor) addSensor(ctx context.Context, s string, sensorType string) {
 	ok := tp.checkExistingSensor(s)
 	if !ok {
-		b := newBatch(ctx, s, sensorType, tp.samples, float64(tp.reference.humidity), tp.batchDuration, tp.cleanup)
+		var reference float64
+		switch sensorType {
+		case "temp":
+			reference = tp.reference.temperature
+		case "hum":
+			reference = tp.reference.humidity
+		}
+
+		b := batch.NewBatch(ctx, s, sensorType, tp.samples, reference, tp.batchDuration, tp.cleanup)
 		tp.m.Lock()
 		tp.sensors[s] = b
 		tp.m.Unlock()
@@ -127,66 +145,76 @@ func (tp *Processor) receiveFileIO(ctx context.Context) {
 			continue
 		}
 
-		b := string(buf)
-		s := strings.Split(b, " ")
-		if len(s) > 1 {
-			fmt.Println(b)
-		}
-		if len(s) < 2 {
-			s = append(s, " ")
-		}
+		go func() {
+			fmt.Println("Processing")
 
-		_ = tp.dispatch(ctx, b, s)
+			b := string(buf)
+			s := strings.Split(b, " ")
+			fmt.Println(s)
+			if len(s) > 1 {
+				fmt.Println(b)
+			}
+			if len(s) < 2 {
+				s = append(s, " ")
+			}
+
+			_ = tp.dispatch(ctx, b, s)
+		}()
+
 		buf = make([]byte, 1024)
 		continue
 	}
-
-	fmt.Println("Closing reference receiver")
-	return
 }
 
-func (tp *Processor) dispatch(ctx context.Context, z string, s []string) bool {
-	var dispatched = true
+func (tp *Processor) dispatch(ctx context.Context, z string, s []string) error {
+
+	fmt.Println("DUMPING")
+	var err error
 	switch {
 	case strings.Contains(z, "reference"):
-		tp.reference.new(s[1], s[2])
-		tp.reference.set = true
-	case strings.Contains(z, "humidity"):
-		dispatched = tp.dispatchHumidity(ctx, s)
-	case strings.Contains(z, "thermometer"):
-		dispatched = tp.dispatchTemperature(ctx, s)
+		tp.updateReference(s)
+	case strings.Contains(z, "hum"):
+		err = tp.dispatchHumidity(ctx, s)
+	case strings.Contains(z, " temp"):
+		err = tp.dispatchTemperature(ctx, s)
 	default:
-		dispatched = false
+		err = errors.New("Unable to dispatch")
 	}
-	return dispatched
+	return err
 }
 
-func (tp *Processor) dispatchTemperature(ctx context.Context, s []string) bool {
-	success := true
+func (tp *Processor) dispatchTemperature(ctx context.Context, s []string) error {
+	var err error
 	switch {
 	case s[0] == "thermometer":
-		go tp.addSensor(ctx, "temp", s[1])
-	case checkTemperatureSample(s):
-		val, _ := strconv.ParseFloat(s[2], 64)
-		success = tp.sendLogs(s[1], val)
+		tp.addSensor(ctx, "temp", s[1])
+	case strings.Contains(s[1], "temp-"):
+		val, err := strconv.ParseFloat(s[2], 64)
+		if err != nil {
+			return err
+		}
+		err = tp.sendLogs(s[1], val)
 	default:
-		success = false
+		err = errors.New("wasn't able to dispatch temperature")
 	}
-	return success
+	return err
 }
 
-func (tp *Processor) dispatchHumidity(ctx context.Context, s []string) bool {
-	success := true
+func (tp *Processor) dispatchHumidity(ctx context.Context, s []string) error {
+	var err error
 	switch {
 	case s[0] == "humidity":
-		go tp.addSensor(ctx, "hum", s[1])
-	case checkHumiditySample(s):
-		val, _ := strconv.ParseFloat(s[2], 64)
-		success = tp.sendLogs(s[1], val)
+		tp.addSensor(ctx, "hum", s[1])
+	case strings.Contains(s[1], "hum-"):
+		val, err := strconv.ParseFloat(s[2], 64)
+		if err != nil {
+			return err
+		}
+		err = tp.sendLogs(s[1], val)
 	default:
-		success = false
+		err = errors.New("wasn't able to dispatch temperature")
 	}
-	return success
+	return err
 }
 
 func checkTemperatureSample(s []string) bool {
