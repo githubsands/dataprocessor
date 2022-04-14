@@ -132,7 +132,7 @@ func (b *Batch) processTemperature(temps []float64, temperatureReference float64
 		precision = "precise"
 	}
 
-	return fmt.Sprintf(b.name + " " + precision)
+	return b.name + " " + precision
 }
 
 //TODO: Batch should only process - not be aware which sensor its processing. possibly take in a first class function here
@@ -148,7 +148,7 @@ func (b *Batch) processHumidity(humds []float64, humidityReference float64) stri
 		}
 	}
 
-	return fmt.Sprintf(b.name + " " + status)
+	return b.name + " " + status
 }
 
 func (b *Batch) produce(s string) {
