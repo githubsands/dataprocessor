@@ -40,8 +40,8 @@ type batch struct {
 func newBatch(ctx context.Context, name string, sensor string, samples float64, reference float64, length time.Duration, cleanup chan<- string) *batch {
 	b := new(batch)
 	b.tick = *time.NewTicker(length)
-	b.name = name
-	b.sensor = sensor
+	b.name = sensor
+	b.sensor = name
 	b.batch = ring.New(int(samples))
 	b.currentSamples = 0
 	b.samples = samples
@@ -92,7 +92,7 @@ func (b *batch) process(reference float64) {
 	b.state = "processing"
 	for i := 0; i < b.batch.Len(); i++ {
 		val := b.batch
-		vals = append(vals, val.Value.(float64))
+		vals = append(vals, val.Value.(float64)) // TODO: I assume this uses reflection so not very optimal
 		_ = b.batch.Prev()
 	}
 

@@ -10,7 +10,7 @@ import (
 
 type config struct {
 	Samples       float64 `yaml:"samples"`
-	BatchDuration float64 `yaml:"batchduration"`
+	BatchDuration string  `yaml:"batchduration"`
 }
 
 func getConfig() *config {
@@ -25,7 +25,7 @@ func getConfig() *config {
 	}
 	yaml.Unmarshal(b, cfg)
 
-	if cfg.Samples == 0 || cfg.BatchDuration == 0 {
+	if cfg.Samples == 0 || cfg.BatchDuration == "" {
 		panic("Must set samples and batch duration")
 	}
 
