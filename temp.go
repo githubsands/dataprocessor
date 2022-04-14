@@ -4,7 +4,8 @@ import (
 	"bufio"
 	"container/list"
 	"context"
-	"os"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,73 +49,177 @@ type Processor struct {
 	m             sync.Mutex
 	samples       float64
 	batchDuration time.Duration
+	done          chan struct{}
+	cleanup       chan string
 
 	set       bool
 	reference reference
 
 	preProcessedBuffer *list.List
+	file               io.Reader
 
 	sensors map[string]*batch
 }
 
-func NewProcessor(ctx context.Context, samples float64, batchDuration time.Duration) *Processor {
+func NewProcessor(ctx context.Context, samples float64, batchDuration time.Duration, file io.Reader) *Processor {
 	tp := new(Processor)
 	tp.samples = samples
 	tp.preProcessedBuffer = list.New()
 	tp.batchDuration = batchDuration
 	tp.set = false
+	tp.done = make(chan struct{}, 1)
 	tp.sensors = make(map[string]*batch)
+	tp.file = file
+	tp.cleanup = make(chan string, 1)
+
+	go tp.cleanUpSensor(ctx)
 
 	return tp
 }
 
-func (tp *Processor) addSensor(ctx context.Context, s string) {
-	tp.m.Lock()
-	defer tp.m.Unlock()
+func (tp *Processor) checkExistingSensor(s string) bool {
+	_, ok := tp.sensors[s]
+	fmt.Println("Checking existing sensor")
+	return ok
+}
 
-	val, ok := tp.sensors[s]
+func (tp *Processor) sendLogs(s string, val float64) bool {
+	var success bool = true
+	batch, ok := tp.sensors[s]
 	if ok {
-		switch {
-		case val.state == "consuming":
-			val.consumer <- s
-			return
-		default:
-			return
-		}
+		batch.consumer <- val
+		return success
 	}
 
-	b := newBatch(ctx, tp.samples, tp.batchDuration, s)
-	tp.sensors[s] = b
+	return false
+}
+
+func (tp *Processor) addSensor(ctx context.Context, s string, sensorType string) {
+	ok := tp.checkExistingSensor(s)
+	if !ok {
+		b := newBatch(ctx, s, sensorType, tp.samples, float64(tp.reference.humidity), tp.batchDuration, tp.cleanup)
+		tp.m.Lock()
+		tp.sensors[s] = b
+		tp.m.Unlock()
+		return
+	}
 	return
 }
 
-func (tp *Processor) ProcessLogs(ctx context.Context) {
-	r := bufio.NewReader(os.Stdin)
-	wg := sync.WaitGroup{}
-	wg.Add(2)
+// TODO: Add context cancellation cleanup
+func (tp *Processor) cleanUpSensor(ctx context.Context) {
+	for {
+		select {
+		case sensor := <-tp.cleanup:
+			tp.m.Lock()
+			delete(tp.sensors, sensor)
+			tp.m.Unlock()
+		}
+	}
+}
 
-	// TODO: make its own process
-	// boot the temperatureprocessor
-	go func() {
-		for !tp.reference.set {
-			b, err := r.ReadString('\n')
-			if err != nil {
-				continue
-			}
-
-			ok := strings.Contains(b, "reference")
-			if ok {
-				continue
-			}
-
-			s := strings.SplitAfter(b, " ")
-			tp.reference.new(s[1], s[2])
+func (tp *Processor) receiveFileIO(ctx context.Context) {
+	r := bufio.NewReader(tp.file)
+	buf := make([]byte, 20000)
+	for {
+		_, err := r.Read(buf)
+		if err != nil && err != io.EOF {
+			continue
 		}
 
-		return
-	}()
+		b := string(buf)
+		s := strings.Split(b, " ")
+		if len(s) > 1 {
+			fmt.Println(b)
+		}
+		if len(s) < 2 {
+			s = append(s, " ")
+		}
 
-	// TODO: make its own function
+		_ = tp.dispatch(ctx, b, s)
+		buf = make([]byte, 1024)
+		continue
+	}
+
+	fmt.Println("Closing reference receiver")
+	return
+}
+
+func (tp *Processor) dispatch(ctx context.Context, z string, s []string) bool {
+	var dispatched = true
+	switch {
+	case strings.Contains(z, "reference"):
+		tp.reference.new(s[1], s[2])
+		tp.reference.set = true
+	case strings.Contains(z, "humidity"):
+		dispatched = tp.dispatchHumidity(ctx, s)
+	case strings.Contains(z, "thermometer"):
+		dispatched = tp.dispatchTemperature(ctx, s)
+	default:
+		dispatched = false
+	}
+	return dispatched
+}
+
+func (tp *Processor) dispatchTemperature(ctx context.Context, s []string) bool {
+	success := true
+	switch {
+	case s[0] == "thermometer":
+		go tp.addSensor(ctx, "temp", s[1])
+	case checkTemperatureSample(s):
+		val, _ := strconv.ParseFloat(s[2], 64)
+		success = tp.sendLogs(s[1], val)
+	default:
+		success = false
+	}
+	return success
+}
+
+func (tp *Processor) dispatchHumidity(ctx context.Context, s []string) bool {
+	success := true
+	switch {
+	case s[0] == "humidity":
+		go tp.addSensor(ctx, "hum", s[1])
+	case checkHumiditySample(s):
+		val, _ := strconv.ParseFloat(s[2], 64)
+		success = tp.sendLogs(s[1], val)
+	default:
+		success = false
+	}
+	return success
+}
+
+func checkTemperatureSample(s []string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	var ok1, ok2 bool
+	_, err := strconv.ParseFloat(s[2], 64)
+	if err != nil {
+		ok1 = true
+	}
+
+	ok2 = strings.Contains(s[1], "temp-")
+	return ok1 && ok2
+}
+
+func checkHumiditySample(s []string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	var ok1, ok2 bool
+	_, err := strconv.ParseFloat(s[2], 64)
+	if err != nil {
+		ok1 = true
+	}
+
+	ok2 = strings.Contains(s[1], "hum-")
+	return ok1 && ok2
+}
+
+/*
+func (tp *Processor) buildBuffer() {
+	r := bufio.NewReader(os.Stdin)
 	go func() {
 		for !tp.reference.set {
 			b, err := r.ReadString('\n')
@@ -123,30 +228,23 @@ func (tp *Processor) ProcessLogs(ctx context.Context) {
 			}
 			s := strings.SplitAfter(b, " ")
 			if s[0] != "reference" {
+				fmt.Println("Adding to buffer")
 				tp.preProcessedBuffer.PushBack(b)
 				continue
 			}
 		}
-
-		return
 	}()
 
-	wg.Wait()
-
-	// TODO: Make its own function
 	for {
-		go func() {
-			for e := tp.preProcessedBuffer.Front(); e != nil; e = e.Next() {
-				tp.addSensor(ctx, e.Value.(string))
-			}
+		select {
+		case <-tp.done:
+			wg.Done()
 			return
-		}()
-		sensor, err := r.ReadString('\n')
-		if err != nil {
-			continue
 		}
-
-		tp.addSensor(ctx, sensor)
-		continue
 	}
+}
+*/
+
+func (tp *Processor) ProcessLogs(ctx context.Context) {
+	tp.receiveFileIO(ctx)
 }

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	gonum "gonum.org/v1/gonum/stat"
+	gonum "gonum.org/v1/gonum/stat" // TODO: May be better to add floats as they are received...
 )
 
 const (
@@ -19,59 +19,81 @@ type batch struct {
 	m     sync.Mutex
 	state string
 
-	name   string
-	sensor string
+	name           string
+	sensor         string
+	currentSamples float64
+	samples        float64
+	reference      float64
 
-	tick time.Ticker
+	tick time.Ticker // TODO: Could just use a context timeout here
 
-	batch *ring.Ring
+	batch *ring.Ring // TODO: Change to just a chan or other methods noted in the README
 
-	consumer chan string
+	consumer chan float64 // ... TODO: Could just use a channel instead of ring buffer
 	producer chan string
+
+	cleanup chan<- string
 
 	cancel func()
 }
 
-func newBatch(ctx context.Context, samples float64, length time.Duration, s string) *batch {
+func newBatch(ctx context.Context, name string, sensor string, samples float64, reference float64, length time.Duration, cleanup chan<- string) *batch {
 	b := new(batch)
 	b.tick = *time.NewTicker(length)
+	b.name = name
+	b.sensor = sensor
 	b.batch = ring.New(int(samples))
-	b.consumer = make(chan string, int(samples))
+	b.currentSamples = 0
+	b.samples = samples
+	b.reference = reference
+	b.consumer = make(chan float64, int(samples))
 	b.producer = make(chan string, 1)
+	b.cleanup = cleanup
 	ctx, cancel := context.WithCancel(ctx)
 	b.cancel = cancel
-	go b.consume(ctx)
+	go b.run(ctx)
 	return b
 }
 
-func (b *batch) consume(ctx context.Context) {
+func (b *batch) run(ctx context.Context) {
 	defer close(b.consumer)
-	b.state = "consuming"
-	for {
-		select {
-		// TODO
-		case tempReading := <-b.consumer:
-			if b.state == "consuming" {
-				b.m.Lock()
+	defer b.tick.Stop()
 
+	b.state = "consuming"
+	go func() {
+		for {
+			select {
+			case tempReading := <-b.consumer:
+				if b.currentSamples == b.samples {
+					b.process(b.reference)
+					return
+				}
 				b.batch.Value = tempReading
 				b.batch.Next()
+				b.m.Lock()
+				b.currentSamples++
 				b.m.Unlock()
+			case <-b.tick.C:
+				b.process(b.reference)
+				return
 			}
-			return
-		case <-ctx.Done():
-			return
 		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return
 	}
 }
 
-func (b *batch) process(temp float64, reference float64) {
+func (b *batch) process(reference float64) {
 	b.m.Lock()
 	var vals []float64
 	b.state = "processing"
 	for i := 0; i < b.batch.Len(); i++ {
-		val := b.batch.Next()
+		val := b.batch
 		vals = append(vals, val.Value.(float64))
+		_ = b.batch.Prev()
 	}
 
 	var output string
@@ -79,15 +101,22 @@ func (b *batch) process(temp float64, reference float64) {
 	case temperature:
 		output = b.processTemperature(vals, reference)
 	case humidity:
-		output = b.processHumditity(vals, reference)
+		output = b.processHumidity(vals, reference)
+	default:
+		// discard the sensor given is not implemented
+		return
 	}
 
 	b.produce(output)
+
 	b.state = "done"
-	b.m.Unlock()
+	fmt.Println("cleaning up")
+	b.cleanup <- b.name
 	b.cancel()
+	return
 }
 
+//TODO: batch should only process - not be aware which sensor its processing. possibly take in a first class function here
 func (b *batch) processTemperature(temps []float64, temperatureReference float64) string {
 	temperatureDifferenceLow := temperatureReference - temperatureReference*0.5
 	temperatureDifferenceHigh := temperatureReference + temperatureReference*0.5
@@ -95,19 +124,24 @@ func (b *batch) processTemperature(temps []float64, temperatureReference float64
 	var precision string
 	switch {
 	case temperatureDifferenceLow <= mean && mean <= temperatureDifferenceHigh && std < float64(3.0):
+		fmt.Println("made it --")
 		precision = "ultra precise"
 	case temperatureDifferenceLow <= mean && mean <= temperatureDifferenceHigh && std < float64(5.0):
-		precision = "very price"
+		fmt.Println("made it --")
+		precision = "very precise"
 	default:
+		fmt.Println("made it --")
 		precision = "precise"
 	}
 
-	return fmt.Sprintf(b.name + precision)
+	return fmt.Sprintf(b.name + " " + precision)
 }
 
-func (b *batch) processHumditity(humds []float64, humidityReference float64) string {
+//TODO: batch should only process - not be aware which sensor its processing. possibly take in a first class function here
+func (b *batch) processHumidity(humds []float64, humidityReference float64) string {
 	humidityDifferenceLow := humidityReference - humidityReference*0.1
 	humidityDifferenceHigh := humidityReference + humidityReference*0.1
+	fmt.Println(humidityDifferenceHigh)
 	var status string = "OK"
 	for _, v := range humds {
 		if humidityDifferenceLow > v || humidityDifferenceHigh < v {
@@ -116,7 +150,7 @@ func (b *batch) processHumditity(humds []float64, humidityReference float64) str
 		}
 	}
 
-	return fmt.Sprintf(b.name + status)
+	return fmt.Sprintf(b.name + " " + status)
 }
 
 func (b *batch) produce(s string) {
