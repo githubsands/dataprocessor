@@ -14,3 +14,4 @@
 - [ ]TODO: Program needs to beable to handle a change in reference
 - [ ]TODO: Program needs to beable buffer incoming logs when a reference change is occuring
 - [ ]TODO: Swap file IO for networkIO for incoming logs
+- [ ]TODO: Apply structure packing to batch when cache data structure is decided upon
