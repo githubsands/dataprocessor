@@ -16,25 +16,19 @@ const (
 )
 
 type Batch struct {
-	m     sync.Mutex
-	state string
-
-	name           string
+	consumer       chan float64
+	Batch          *ring.Ring
+	cleanup        chan<- string
+	producer       chan string
+	cancel         func()
+	state          string
 	sensor         string
-	currentSamples float64
-	samples        float64
+	name           string
+	tick           time.Ticker
 	reference      float64
-
-	tick time.Ticker // TODO: Could just use a context timeout here
-
-	Batch *ring.Ring // TODO: Change to just a chan or other methods noted in the README
-
-	consumer chan float64 // ... TODO: Could just use a channel instead of ring buffer
-	producer chan string
-
-	cleanup chan<- string
-
-	cancel func()
+	samples        float64
+	currentSamples float64
+	m              sync.Mutex
 }
 
 func NewBatch(ctx context.Context, name string, sensor string, samples float64, reference float64, length time.Duration, cleanup chan<- string) *Batch {
