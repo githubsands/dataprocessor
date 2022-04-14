@@ -75,7 +75,6 @@ func (b *Batch) run(ctx context.Context) {
 				b.Batch.Value = tempReading
 				b.Batch.Next()
 				b.m.Lock()
-				fmt.Println("FUUUCK-3", tempReading)
 				b.currentSamples++
 				b.m.Unlock()
 			case <-b.tick.C:
@@ -105,7 +104,6 @@ func (b *Batch) process(reference float64) {
 	switch b.sensor {
 	case temperature:
 		output = b.processTemperature(vals, reference)
-		fmt.Println("PROCESSING")
 	case humidity:
 		output = b.processHumidity(vals, reference)
 	default:
