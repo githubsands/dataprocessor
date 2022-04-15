@@ -217,62 +217,6 @@ func (tp *Processor) dispatchHumidity(ctx context.Context, s []string) error {
 	return err
 }
 
-func checkTemperatureSample(s []string) bool {
-	if len(s) != 3 {
-		return false
-	}
-	var ok1, ok2 bool
-	_, err := strconv.ParseFloat(s[2], 64)
-	if err != nil {
-		ok1 = true
-	}
-
-	ok2 = strings.Contains(s[1], "temp-")
-	return ok1 && ok2
-}
-
-func checkHumiditySample(s []string) bool {
-	if len(s) != 3 {
-		return false
-	}
-	var ok1, ok2 bool
-	_, err := strconv.ParseFloat(s[2], 64)
-	if err != nil {
-		ok1 = true
-	}
-
-	ok2 = strings.Contains(s[1], "hum-")
-	return ok1 && ok2
-}
-
-/*
-func (tp *Processor) buildBuffer() {
-	r := bufio.NewReader(os.Stdin)
-	go func() {
-		for !tp.reference.set {
-			b, err := r.ReadString('\n')
-			if err != nil {
-				continue
-			}
-			s := strings.SplitAfter(b, " ")
-			if s[0] != "reference" {
-				fmt.Println("Adding to buffer")
-				tp.preProcessedBuffer.PushBack(b)
-				continue
-			}
-		}
-	}()
-
-	for {
-		select {
-		case <-tp.done:
-			wg.Done()
-			return
-		}
-	}
-}
-*/
-
 func (tp *Processor) ProcessLogs(ctx context.Context) {
 	tp.receiveFileIO(ctx)
 }
