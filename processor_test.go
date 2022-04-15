@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"data-processing/batch"
 	"fmt"
 	"strings"
 	"testing"
@@ -87,7 +88,7 @@ func TestAddSensor(t *testing.T) { // DOESNT WORK
 	time.Sleep(2 * time.Second)
 
 	var ok bool
-	var b *batch
+	var b *batch.Batch
 	for _, v := range sensors {
 		b, ok = p.sensors[v]
 		fmt.Println(b)
@@ -109,7 +110,7 @@ func testBatchSensorConsumingChannels(p *Processor, t *testing.T) {
 	time.Sleep(2 * time.Second)
 	for k, _ := range p.sensors {
 		fmt.Println(k)
-		p.sensors[k].consumer <- 5.0
+		p.sensors[k].Consume(5.0)
 	}
 }
 
@@ -218,4 +219,8 @@ func TestDispatchHumidities(t *testing.T) {
 	}
 
 	time.Sleep(2 * time.Second)
+}
+
+func TestSimulation(t *testing.T) {
+	fmt.Println(generateTemps(70.0, 10.0, 100, 4))
 }

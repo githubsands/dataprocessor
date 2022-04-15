@@ -46,8 +46,13 @@ func simulateMode(ctx context.Context) {
 	writer := bufio.NewWriter(os.Stdin)
 	for {
 		time.Sleep(2 * time.Second)
-		one, two := writer.WriteString("test")
-		fmt.Println(one, two)
+		/*
+			temps := generateTemps(70.0, 10.0, 100, 4)
+			for _, v := range temps {
+				_, _ = writer.WriteString(v)
+			}
+		*/
+		_, _ = writer.WriteString("test")
 	}
 }
 
