@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -66,7 +65,7 @@ func NewProcessor(ctx context.Context, samples float64, batchDuration string, re
 	tp.done = make(chan struct{}, 1)
 	tp.sensors = make(map[string]*batch.Batch)
 	tp.io = reader
-	tp.cleanup = make(chan string, 1)
+	tp.cleanup = make(chan string, 10000)
 
 	go tp.cleanUpSensor(ctx)
 
@@ -146,14 +145,8 @@ func (tp *Processor) receiveFileIO(ctx context.Context) {
 		}
 
 		go func() {
-			fmt.Println("Processing")
-
 			b := string(buf)
 			s := strings.Split(b, " ")
-			fmt.Println(s)
-			if len(s) > 1 {
-				fmt.Println(b)
-			}
 			if len(s) < 2 {
 				s = append(s, " ")
 			}
@@ -167,8 +160,6 @@ func (tp *Processor) receiveFileIO(ctx context.Context) {
 }
 
 func (tp *Processor) dispatch(ctx context.Context, z string, s []string) error {
-
-	fmt.Println("DUMPING")
 	var err error
 	switch {
 	case strings.Contains(z, "reference"):
