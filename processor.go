@@ -47,12 +47,12 @@ type Processor struct {
 	reference reference
 
 	preProcessedBuffer *list.List
-	file               io.Reader
+	io                 io.Reader
 
 	sensors map[string]*batch.Batch
 }
 
-func NewProcessor(ctx context.Context, samples float64, batchDuration string, file io.Reader) *Processor {
+func NewProcessor(ctx context.Context, samples float64, batchDuration string, reader io.Reader) *Processor {
 	tp := new(Processor)
 	tp.samples = samples
 
@@ -65,7 +65,7 @@ func NewProcessor(ctx context.Context, samples float64, batchDuration string, fi
 	tp.set = false
 	tp.done = make(chan struct{}, 1)
 	tp.sensors = make(map[string]*batch.Batch)
-	tp.file = file
+	tp.io = reader
 	tp.cleanup = make(chan string, 1)
 
 	go tp.cleanUpSensor(ctx)
@@ -137,7 +137,7 @@ func (tp *Processor) cleanUpSensor(ctx context.Context) {
 }
 
 func (tp *Processor) receiveFileIO(ctx context.Context) {
-	r := bufio.NewReader(tp.file)
+	r := bufio.NewReader(tp.io)
 	buf := make([]byte, 20000)
 	for {
 		_, err := r.Read(buf)

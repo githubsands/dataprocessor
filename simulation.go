@@ -95,7 +95,7 @@ func generateTemps(temperature float64, sigma float64, sampleSize int, sensors i
 
 func generateHumidity(humidity float64, sigma float64, sampleSize int, sensors int) []string {
 	dist := distuv.Normal{
-		Mu:    temperature,
+		Mu:    humidity,
 		Sigma: sigma,
 	}
 	sensor := 1
@@ -115,7 +115,7 @@ func generateHumidity(humidity float64, sigma float64, sampleSize int, sensors i
 	}
 
 	for _, v := range trs {
-		temps = append(temps, generateInput(humidityLogSkeleton, v))
+		temps = append(temps, generateInput(humiditySkeletonLog, v))
 	}
 
 	return temps
