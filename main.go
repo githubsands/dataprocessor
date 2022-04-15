@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`") // TODO: Add this back in
-var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
 var simulate = flag.String("simulation", "false", "runs dataprocessor in simulation mode")
 
 func main() {
