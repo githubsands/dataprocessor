@@ -51,6 +51,12 @@ func simulateMode(ctx context.Context, writer io.Writer, sampleSizes float64) {
 	}
 }
 
+func NewTempeartureSensorReplacementSet() map[string]string {
+	m := make(map[string]string)
+	m["N"] = ""
+	return m
+}
+
 func NewTempeartureReplacementSet() map[string]string {
 	m := make(map[string]string)
 	m["N"] = ""
@@ -82,6 +88,20 @@ func generateReference(amount int) string {
 	referenceReplacementSet["HUM"] = "45.0"
 
 	return generateInput(referenceSkeleton, referenceReplacementSet)
+}
+
+func generateTempSensors(amount int) []string {
+	var tempSensors []string = make([]string, amount)
+	var tr map[string]string
+	var tempSensor string
+	for i := 0; i < amount; i++ {
+		tr = NewTempeartureSensorReplacementSet()
+		tr["N"] = string(i)
+		tempSensor = generateInput(temperatureLogSensor, tr)
+		tempSensors = append(tempSensors, tempSensor)
+	}
+
+	return tempSensors
 }
 
 func generateTemps(temperature float64, sigma float64, sampleSize int, sensors int) []string {
