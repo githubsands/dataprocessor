@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
 	"gonum.org/v1/gonum/stat/distuv"
 )
@@ -30,6 +33,24 @@ var (
 	temperatureLogSkeleton = "2007-04-05T22:00 temp-N TEMP"
 )
 
+// simulateMode starts processor in simulation mode -
+func simulateMode(ctx context.Context, writer io.Writer, sampleSizes float64) {
+	time.Sleep(1 * time.Second) // wait for processor to start
+	var referenceSet bool = false
+	for {
+		if !referenceSet {
+			reference := generateReference(1)
+			num, _ := writer.Write([]byte(reference))
+			if num != 0 {
+				referenceSet = true
+			}
+		}
+
+		temps := generateTemps(80.0, 1.0, 1.0, 1)
+		writer.Write([]byte(temps[0]))
+	}
+}
+
 func NewTempeartureReplacementSet() map[string]string {
 	m := make(map[string]string)
 	m["N"] = ""
@@ -45,7 +66,6 @@ func NewHumidityReplacementSet() map[string]string {
 }
 
 func generateInput(inputTypeString string, replace map[string]string) string {
-	fmt.Println(inputTypeString)
 	if len(replace) != 0 {
 		for k, v := range replace {
 			inputTypeString = strings.Replace(inputTypeString, k, v, 1)
@@ -86,7 +106,6 @@ func generateTemps(temperature float64, sigma float64, sampleSize int, sensors i
 	}
 
 	for _, v := range trs {
-		fmt.Println(temperatureLogSkeleton)
 		temps = append(temps, generateInput(temperatureLogSkeleton, v))
 	}
 

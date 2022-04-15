@@ -56,6 +56,7 @@ func (b *Batch) Consume(val float64) {
 func (b *Batch) run(ctx context.Context) {
 	defer close(b.consumer)
 	defer b.tick.Stop()
+	fmt.Println("Running")
 
 	b.state = "consuming"
 	go func() {
@@ -63,9 +64,11 @@ func (b *Batch) run(ctx context.Context) {
 			select {
 			case tempReading := <-b.consumer:
 				if b.currentSamples == b.samples {
+					fmt.Println("Dumpingddddd", tempReading)
 					b.process(b.reference)
 					return
 				}
+				fmt.Println("Dumpingddddd", tempReading)
 				b.Batch.Value = tempReading
 				b.Batch.Next()
 				b.m.Lock()

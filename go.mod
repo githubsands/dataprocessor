@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/klauspost/readahead v1.4.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	golang.org/x/exp v0.0.0-20191002040644-a1355ae1e2c3 // indirect
 	golang.org/x/tools v0.1.10 // indirect
