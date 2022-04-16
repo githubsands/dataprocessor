@@ -23,6 +23,7 @@ type Batch struct {
 	cancel         func()
 	state          string
 	sensor         string
+	sensorType     string
 	name           string
 	tick           time.Ticker
 	reference      float64
@@ -36,6 +37,7 @@ func NewBatch(ctx context.Context, name string, sensor string, samples float64, 
 	b.tick = *time.NewTicker(length)
 	b.name = sensor
 	b.sensor = name
+	b.sensorType = sensor
 	b.Batch = ring.New(int(samples))
 	b.currentSamples = 0
 	b.samples = samples
@@ -46,7 +48,12 @@ func NewBatch(ctx context.Context, name string, sensor string, samples float64, 
 	ctx, cancel := context.WithCancel(ctx)
 	b.cancel = cancel
 	go b.run(ctx)
+	go b.write(ctx)
 	return b
+}
+
+func (b *Batch) State() string {
+	return b.state
 }
 
 func (b *Batch) Consume(val float64) {
@@ -56,19 +63,16 @@ func (b *Batch) Consume(val float64) {
 func (b *Batch) run(ctx context.Context) {
 	defer close(b.consumer)
 	defer b.tick.Stop()
-	fmt.Println("Running")
-
 	b.state = "consuming"
 	go func() {
 		for {
 			select {
 			case tempReading := <-b.consumer:
 				if b.currentSamples == b.samples {
-					fmt.Println("Dumpingddddd", tempReading)
+					b.state = "processing"
 					b.process(b.reference)
 					return
 				}
-				fmt.Println("Dumpingddddd", tempReading)
 				b.Batch.Value = tempReading
 				b.Batch.Next()
 				b.m.Lock()
@@ -98,7 +102,7 @@ func (b *Batch) process(reference float64) {
 	}
 
 	var output string
-	switch b.sensor {
+	switch b.sensorType {
 	case temperature:
 		output = b.processTemperature(vals, reference)
 	case humidity:
@@ -111,7 +115,6 @@ func (b *Batch) process(reference float64) {
 	b.produce(output)
 
 	b.state = "done"
-	fmt.Println("cleaning up")
 	b.cleanup <- b.name
 	b.cancel()
 	return
@@ -125,13 +128,10 @@ func (b *Batch) processTemperature(temps []float64, temperatureReference float64
 	var precision string
 	switch {
 	case temperatureDifferenceLow <= mean && mean <= temperatureDifferenceHigh && std < float64(3.0):
-		fmt.Println("made it --")
 		precision = "ultra precise"
 	case temperatureDifferenceLow <= mean && mean <= temperatureDifferenceHigh && std < float64(5.0):
-		fmt.Println("made it --")
 		precision = "very precise"
 	default:
-		fmt.Println("made it --")
 		precision = "precise"
 	}
 
@@ -156,4 +156,16 @@ func (b *Batch) processHumidity(humds []float64, humidityReference float64) stri
 
 func (b *Batch) produce(s string) {
 	b.producer <- s
+}
+
+func (b *Batch) write(ctx context.Context) {
+	defer close(b.producer)
+	for {
+		select {
+		case val := <-b.producer:
+			fmt.Println("Processed value as: ", val)
+		case <-ctx.Done():
+			return
+		}
+	}
 }

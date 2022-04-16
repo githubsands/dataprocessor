@@ -93,15 +93,32 @@ func (tp *Processor) checkExistingSensor(s string) bool {
 
 func (tp *Processor) sendLogs(sensorName string, val float64) error {
 	var err error
-	fmt.Println(sensorName)
 	batch, ok := tp.sensors[sensorName]
-	if ok {
-		batch.Consume(val)
-		return err
+	if batch.State() == "consuming" {
+		if ok {
+			batch.Consume(val)
+			return err
+		}
 	}
 
 	return errors.New(fmt.Sprintf("%v does not exist. Unable to send batch data\n", sensorName))
 }
+
+/*
+func (tp *Processor) sendLogs(sensorName string, val float64) error {
+	batch, ok := tp.sensors[sensorName]
+	if ok {
+		switch batch.State() {
+		case "consuming":
+			batch.Consume(val)
+		case "processing":
+			return errors.New(fmt.Sprintf("Batch %v is in a processing state not taking in anymore logs", sensorName))
+		}
+	}
+
+	return errors.New(fmt.Sprintf("%v does not exist. Unable to send batch data\n", sensorName))
+}
+*/
 
 func (tp *Processor) addSensor(ctx context.Context, sensorName string, sensorType string) error {
 	ok := tp.checkExistingSensor(sensorName)
@@ -200,14 +217,12 @@ func (tp *Processor) dispatchTemperature(ctx context.Context, s []string) error 
 	case s[0] == "thermometer":
 		tp.addSensor(ctx, s[1], "temp")
 	case strings.Contains(s[1], "temp-"):
-		fmt.Println("ADDING TEMP READ", s[2])
 		s[2] = strings.TrimRight(s[2], "\n")
 		val, err := strconv.ParseFloat(s[2], 64)
 		if err != nil {
 			fmt.Println("Got", val, err)
 			return err
 		}
-		fmt.Println("Got", val)
 		err = tp.sendLogs(s[1], val)
 	default:
 		err = errors.New("wasn't able to dispatch temperature")

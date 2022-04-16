@@ -52,7 +52,6 @@ func (s *simulator) run(ctx context.Context, writer io.Writer, sampleSizes float
 			for i := range tempSensors {
 				writer.Write([]byte(tempSensors[i]))
 			}
-			return
 		}
 
 		temps := generateTemps(80.0, 1.0, 1.0, 1)

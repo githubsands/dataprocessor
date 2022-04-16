@@ -18,7 +18,7 @@ func main() {
 	ctx, cancel := context.WithCancel(ctx)
 	flag.Parse()
 	var reader = io.Reader(os.Stdin)
-	var samples = 40000.0 // total samples per batch to consumer before transforming
+	var samples = 5.0 // total samples per batch to consumer before transforming
 	wg := sync.WaitGroup{}
 	if *simulate != "false" {
 		simulator := new(simulator)
