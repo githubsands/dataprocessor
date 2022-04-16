@@ -21,9 +21,11 @@ func main() {
 	var samples = 40000.0 // total samples per batch to consumer before transforming
 	wg := sync.WaitGroup{}
 	if *simulate != "false" {
+		simulator := new(simulator)
+		simulator.tempSensorsAmount = 1
 		pipeReader, pipeWriter := io.Pipe()
 		wg.Add(1)
-		go simulateMode(ctx, pipeWriter, samples)
+		go simulator.run(ctx, pipeWriter, samples)
 		reader = pipeReader
 	}
 

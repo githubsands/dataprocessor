@@ -29,12 +29,16 @@ var (
 )
 
 var (
-	temperatureLogSensor   = "thermometer temp-N"
-	temperatureLogSkeleton = "2007-04-05T22:00 temp-N TEMP"
+	temperatureLogSensorSkeleton = "thermometer temp-N"
+	temperatureLogSkeleton       = "2007-04-05T22:00 temp-N TEMP"
 )
 
+type simulator struct {
+	tempSensorsAmount int
+}
+
 // simulateMode starts processor in simulation mode -
-func simulateMode(ctx context.Context, writer io.Writer, sampleSizes float64) {
+func (s *simulator) run(ctx context.Context, writer io.Writer, sampleSizes float64) {
 	time.Sleep(1 * time.Second) // wait for processor to start
 	var referenceSet bool = false
 	for {
@@ -44,6 +48,11 @@ func simulateMode(ctx context.Context, writer io.Writer, sampleSizes float64) {
 			if num != 0 {
 				referenceSet = true
 			}
+			tempSensors := generateTempSensors(s.tempSensorsAmount)
+			for i := range tempSensors {
+				writer.Write([]byte(tempSensors[i]))
+			}
+			return
 		}
 
 		temps := generateTemps(80.0, 1.0, 1.0, 1)
@@ -74,6 +83,7 @@ func NewHumidityReplacementSet() map[string]string {
 func generateInput(inputTypeString string, replace map[string]string) string {
 	if len(replace) != 0 {
 		for k, v := range replace {
+
 			inputTypeString = strings.Replace(inputTypeString, k, v, 1)
 			delete(replace, k)
 			inputTypeString = generateInput(inputTypeString, replace)
@@ -94,10 +104,10 @@ func generateTempSensors(amount int) []string {
 	var tempSensors []string = make([]string, amount)
 	var tr map[string]string
 	var tempSensor string
-	for i := 0; i < amount; i++ {
+	for i := 1; i < amount+1; i++ {
 		tr = NewTempeartureSensorReplacementSet()
-		tr["N"] = string(i)
-		tempSensor = generateInput(temperatureLogSensor, tr)
+		tr["N"] = fmt.Sprintf("%d", i)
+		tempSensor = generateInput(temperatureLogSensorSkeleton, tr)
 		tempSensors = append(tempSensors, tempSensor)
 	}
 
