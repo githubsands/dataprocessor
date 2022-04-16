@@ -4,6 +4,7 @@ import (
 	"container/ring"
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -163,7 +164,10 @@ func (b *Batch) write(ctx context.Context) {
 	for {
 		select {
 		case val := <-b.producer:
-			fmt.Println("Processed value as: ", val)
+			s := fmt.Sprintf("Processed batch %v with %v samples as: %v\n", b.sensor, b.samples, val)
+			fmt.Println(s)
+			wd, _ := os.Getwd()
+			os.WriteFile(wd+"/output", []byte(s), 0644)
 		case <-ctx.Done():
 			return
 		}

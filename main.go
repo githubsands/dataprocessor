@@ -14,15 +14,16 @@ import (
 var simulate = flag.String("simulation", "false", "runs dataprocessor in simulation mode")
 
 func main() {
+	createOutputFile()
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	flag.Parse()
 	var reader = io.Reader(os.Stdin)
-	var samples = 5.0 // total samples per batch to consumer before transforming
+	var samples = 1000000.0 // total samples per batch to consumer before transforming
 	wg := sync.WaitGroup{}
 	if *simulate != "false" {
 		simulator := new(simulator)
-		simulator.tempSensorsAmount = 1
+		simulator.tempSensorsAmount = 5
 		pipeReader, pipeWriter := io.Pipe()
 		wg.Add(1)
 		go simulator.run(ctx, pipeWriter, samples)
@@ -30,8 +31,8 @@ func main() {
 	}
 
 	cfg := getConfig()
-	cfg.Samples = samples    // lets override our config to handle simulation level batche sample sizes
-	cfg.BatchDuration = "5m" // lets assume we can handle 40000 sample sizes in 5m
+	cfg.Samples = samples
+	cfg.BatchDuration = "5m"
 	wg.Add(1)
 	processor(ctx, cfg, reader)
 
@@ -51,4 +52,10 @@ func processor(ctx context.Context, cfg *config, reader io.Reader) error {
 	p := NewProcessor(ctx, cfg.Samples, cfg.BatchDuration, reader)
 	p.ProcessLogs(ctx)
 	return nil
+}
+
+func createOutputFile() {
+	wd, _ := os.Getwd()
+	_ = os.Remove(wd + "/output")
+	_, _ = os.Create(wd + "/output")
 }

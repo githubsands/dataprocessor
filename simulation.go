@@ -54,8 +54,17 @@ func (s *simulator) run(ctx context.Context, writer io.Writer, sampleSizes float
 			}
 		}
 
-		temps := generateTemps(80.0, 1.0, 1.0, 1)
-		writer.Write([]byte(temps[0]))
+		temps := generateTemps(80.0, 30.0, 500000, s.tempSensorsAmount) // 100000 samples for each temp sensor
+		for i := range temps {
+			writer.Write([]byte(temps[i]))
+		}
+
+		/*
+			temps := generateTemps(80.0, 30.0, 1000, s.tempSensorsAmount) // 100000 samples for each temp sensor
+			for i := range temps {
+				writer.Write([]byte(temps[i]))
+			}
+		*/
 	}
 }
 
