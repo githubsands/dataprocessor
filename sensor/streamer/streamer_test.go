@@ -1,4 +1,4 @@
-package batch
+package streamer
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"go.uber.org/goleak"
 )
 
-func TestBatchRunTemp(t *testing.T) {
+func TestStreamerRun(t *testing.T) {
 	defer goleak.VerifyNone(t) // test if all goroutines are cleaned up
 
 	var duration time.Duration = 40 * time.Second
@@ -68,69 +68,6 @@ func testBatchChannelCleanup(batch *Batch, t *testing.T) {
 	}()
 
 	batch.consumer <- 40.0 // should cause a panic but we will recover
-}
-
-/*
-func TestBatchRunHumidity(t *testing.T) {
-	var duration time.Duration = 40 * time.Second
-	var sampleSize = 5.0
-	var cleanup = make(chan string, 1)
-	batch := NewBatch(context.TODO(), "hum-1", "hum", sampleSize, 40.0, duration, cleanup)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go batch.run(context.TODO())
-	batch.consumer <- 40.0
-	batch.consumer <- 40.0
-	batch.consumer <- 40.0
-	batch.consumer <- 40.0
-	batch.consumer <- 40.0
-	batch.consumer <- 40.0 // these inputs exceed the sampleSize so they will not make it to processing
-	batch.consumer <- 40.0
-
-	var actual1, actual2 string
-	select {
-	case actual1 := <-batch.producer:
-	case actual2 := <-cleanup:
-		break
-	}
-
-	expected1 := "ultra precise"
-	if expected1 != actual1 {
-		t.Fatalf("Expected %v, got actual %v", expected2, actual2)
-	}
-
-	expected2 := "hum-1"
-	if expected2 != actual2 {
-		t.Fatalf("Expected %v, got actual %v", expected2, actual2)
-	}
-
-	fmt.Println(expected1, actual1, expected2, actual2)
-}
-*/
-
-func TestProcessTemperatureMath(t *testing.T) {
-	b := new(Batch)
-	b.name = "temp-1"
-	floats := []float64{70.0, 70.0, 70.0, 70.0}
-	actual := b.processTemperature(floats, 70)
-	expected := "temp-1 ultra precise"
-	if actual != expected {
-		t.Fatalf("Expected %v, actual %v", expected, actual)
-	}
-
-	floats = []float64{63.0, 68.0, 72.0, 73.0}
-	actual = b.processTemperature(floats, 70)
-	expected = "temp-1 very precise"
-	if actual != expected {
-		t.Fatalf("Expected %v, actual %v", expected, actual)
-	}
-
-	floats = []float64{60.0, 65.0, 70.0, 80.0}
-	actual = b.processTemperature(floats, 70)
-	expected = "temp-1 precise"
-	if actual != expected {
-		t.Fatalf("Expected %v, actual %v", expected, actual)
-	}
 }
 
 func TestProcessHumidityMath(t *testing.T) {

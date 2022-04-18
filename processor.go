@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -12,12 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"data-processing/batch"
-)
-
-const (
-	batchStateConsuming = "consuming"
-	batchStateDone      = "done"
+	"data-processing/sensor/batch"
+	"data-processing/sensor/streamer"
 )
 
 type reference struct {
@@ -34,19 +29,22 @@ func (r reference) new(degree, humidity float64) {
 }
 
 type Processor struct {
-	m             sync.Mutex
-	samples       float64
-	batchDuration time.Duration
-	done          chan struct{}
-	cleanup       chan string
+	m        sync.Mutex
+	samples  float64
+	duration time.Duration
+	done     chan struct{}
+	cleanup  chan string
 
 	set       bool
 	reference reference
 
-	preProcessedBuffer *list.List
-	io                 io.Reader
+	io io.Reader
 
-	sensors map[string]*batch.Batch
+	tempSensors     map[string]*batch.Batch
+	humiditySensors map[string]*streamer.Streamer
+
+	tempSensorCleanup     chan string
+	humiditySensorCleanup chan string
 }
 
 func NewProcessor(ctx context.Context, samples float64, batchDuration string, reader io.Reader) *Processor {
@@ -58,102 +56,19 @@ func NewProcessor(ctx context.Context, samples float64, batchDuration string, re
 		panic(err)
 	}
 
-	tp.batchDuration = duration
+	tp.duration = duration
 	tp.set = false
 	tp.done = make(chan struct{}, 1)
-	tp.sensors = make(map[string]*batch.Batch)
+	tp.tempSensors = make(map[string]*batch.Batch)
+	tp.humiditySensors = make(map[string]*streamer.Streamer)
 	tp.io = reader
-	tp.cleanup = make(chan string, 10000)
+	tp.tempSensorCleanup = make(chan string, 10)
+	tp.humiditySensorCleanup = make(chan string, 10)
 
-	go tp.cleanUpSensor(ctx)
+	go tp.cleanTempSensor(ctx)
+	go tp.cleanHumiditySensor(ctx)
 
 	return tp
-}
-
-func (tp *Processor) updateReference(s []string) {
-	temperature, err := strconv.ParseFloat(s[1], 64)
-	if err != nil {
-		panic(err)
-	}
-
-	humidity, err := strconv.ParseFloat(s[2], 64)
-	if err != nil {
-		panic(err)
-	}
-
-	tp.reference.temperature = temperature
-	tp.reference.humidity = humidity
-	tp.reference.set = true
-}
-
-func (tp *Processor) checkExistingSensor(s string) bool {
-	_, ok := tp.sensors[s]
-	return ok
-}
-
-func (tp *Processor) sendLogs(sensorName string, val float64) error {
-	var err error
-	batch, ok := tp.sensors[sensorName]
-	if batch.State() == "consuming" {
-		if ok {
-			batch.Consume(val)
-			return err
-		}
-	}
-
-	return errors.New(fmt.Sprintf("%v does not exist. Unable to send batch data\n", sensorName))
-}
-
-/*
-func (tp *Processor) sendLogs(sensorName string, val float64) error {
-	batch, ok := tp.sensors[sensorName]
-	if ok {
-		switch batch.State() {
-		case "consuming":
-			batch.Consume(val)
-		case "processing":
-			return errors.New(fmt.Sprintf("Batch %v is in a processing state not taking in anymore logs", sensorName))
-		}
-	}
-
-	return errors.New(fmt.Sprintf("%v does not exist. Unable to send batch data\n", sensorName))
-}
-*/
-
-func (tp *Processor) addSensor(ctx context.Context, sensorName string, sensorType string) error {
-	ok := tp.checkExistingSensor(sensorName)
-	if !ok {
-		var reference float64
-		switch sensorType {
-		case "temp":
-			reference = tp.reference.temperature
-		case "hum":
-			reference = tp.reference.humidity
-		default:
-			break
-		}
-
-		b := batch.NewBatch(ctx, sensorName, sensorType, tp.samples, reference, tp.batchDuration, tp.cleanup)
-		tp.m.Lock()
-		fmt.Println("Adding sensor", sensorName)
-		tp.sensors[sensorName] = b
-		tp.m.Unlock()
-		return nil
-	}
-
-	return errors.New(fmt.Sprintf("Unable to send data - sensorType, %v is not implemented", sensorType))
-}
-
-// TODO: Add context cancellation cleanup
-func (tp *Processor) cleanUpSensor(ctx context.Context) {
-	for {
-		select {
-		case sensor := <-tp.cleanup:
-			tp.m.Lock()
-			delete(tp.sensors, sensor)
-			tp.m.Unlock()
-		}
-	}
 }
 
 func (tp *Processor) receiveFileIO(ctx context.Context) {
@@ -173,8 +88,110 @@ func (tp *Processor) receiveFileIO(ctx context.Context) {
 
 		err = tp.dispatch(ctx, s1, s2)
 		if err != nil {
-			fmt.Printf("Wasn't able to dispatch %v: %v", s1, err.Error())
+			fmt.Println(err)
 			continue
+		}
+	}
+}
+
+func (tp *Processor) updateReference(s []string) {
+	temperature, err := strconv.ParseFloat(s[1], 64)
+	if err != nil {
+		panic(err)
+	}
+
+	humidity, err := strconv.ParseFloat(s[2], 64)
+	if err != nil {
+		panic(err)
+	}
+
+	tp.reference.temperature = temperature
+	tp.reference.humidity = humidity
+	tp.reference.set = true
+}
+
+func (tp *Processor) checkExistingSensor(s string) bool {
+	_, ok := tp.tempSensors[s]
+	return ok
+}
+
+func (tp *Processor) sendLogs(sensorName string, val float64) error {
+	var err error
+	var sensor Sensor
+	var ok bool
+	switch {
+	case strings.Contains(sensorName, "temp"):
+		tp.m.Lock()
+		sensor, ok = tp.tempSensors[sensorName]
+		tp.m.Unlock()
+		break
+	case strings.Contains(sensorName, "hum"):
+		tp.m.Lock()
+		sensor, ok = tp.humiditySensors[sensorName]
+		tp.m.Unlock()
+		break
+	}
+
+	if ok {
+		if sensor.State() == "processing" {
+			sensor.Consume(val)
+			return err
+		}
+	}
+
+	return errors.New(fmt.Sprintf("%v does not exist. Unable to send batch data\n", sensorName))
+}
+
+func (tp *Processor) addTempSensor(ctx context.Context, sensorName string, sensorType string) error {
+	ok := tp.checkExistingSensor(sensorName)
+	if !ok {
+		var reference float64
+		reference = tp.reference.temperature
+		b := batch.NewBatch(ctx, sensorName, sensorType, tp.samples, reference, tp.duration, tp.tempSensorCleanup)
+		tp.m.Lock()
+		tp.tempSensors[sensorName] = b
+		tp.m.Unlock()
+		return nil
+	}
+
+	return errors.New(fmt.Sprintf("Unable to send data - sensorType, %v is not implemented", sensorType))
+}
+
+func (tp *Processor) addHumiditySensor(ctx context.Context, sensorName string, sensorType string) error {
+	ok := tp.checkExistingSensor(sensorName)
+	if !ok {
+		var reference float64
+		reference = tp.reference.humidity
+		b := streamer.NewStreamer(ctx, sensorName, sensorType, tp.samples, reference, tp.duration, tp.humiditySensorCleanup)
+		tp.m.Lock()
+		tp.humiditySensors[sensorName] = b
+		tp.m.Unlock()
+		return nil
+	}
+
+	return errors.New(fmt.Sprintf("Unable to send data - sensorType, %v is not implemented", sensorType))
+}
+
+func (tp *Processor) cleanTempSensor(ctx context.Context) {
+	for {
+		select {
+		case sensor := <-tp.tempSensorCleanup:
+			tp.m.Lock()
+			delete(tp.tempSensors, sensor)
+			tp.m.Unlock()
+		default:
+		}
+	}
+}
+
+func (tp *Processor) cleanHumiditySensor(ctx context.Context) {
+	for {
+		select {
+		case sensor := <-tp.humiditySensorCleanup:
+			tp.m.Lock()
+			delete(tp.humiditySensors, sensor)
+			tp.m.Unlock()
+		default:
 		}
 	}
 }
@@ -187,14 +204,12 @@ func (tp *Processor) processString(buf []byte) (string, []string, error) {
 		s2 = append(s2, " ")
 	}
 
-	// TODO: This doesn't work as intended
 	if s1 == "" {
 		return "", nil, errors.New(fmt.Sprintf("Bad string input given"))
 	}
 	return s1, s2, nil
 }
 
-// TODO: This function should be disolved with multiplexed IO
 func (tp *Processor) dispatch(ctx context.Context, z string, s []string) error {
 	var err error
 	switch {
@@ -215,12 +230,11 @@ func (tp *Processor) dispatchTemperature(ctx context.Context, s []string) error 
 	var err error
 	switch {
 	case s[0] == "thermometer":
-		tp.addSensor(ctx, s[1], "temp")
+		tp.addTempSensor(ctx, s[1], "temp")
 	case strings.Contains(s[1], "temp-"):
 		s[2] = strings.TrimRight(s[2], "\n")
 		val, err := strconv.ParseFloat(s[2], 64)
 		if err != nil {
-			fmt.Println("Got", val, err)
 			return err
 		}
 		err = tp.sendLogs(s[1], val)
@@ -234,7 +248,7 @@ func (tp *Processor) dispatchHumidity(ctx context.Context, s []string) error {
 	var err error
 	switch {
 	case s[0] == "humidity":
-		tp.addSensor(ctx, s[1], "hum")
+		tp.addHumiditySensor(ctx, s[1], "hum")
 	case strings.Contains(s[1], "hum-"):
 		s[2] = strings.TrimRight(s[2], "\n")
 		val, err := strconv.ParseFloat(s[2], 64)

@@ -1,0 +1,19 @@
+// The greeting service definition.
+syntax = "proto3";
+
+option go_package = "google.golang.org/grpc/examples/helloworld/helloworld";
+
+service Processor {
+  // Sends a greeting
+  rpc ReceiveLog(stream LogRequest) returns (stream LogReply) {}
+}
+
+// The request message containing the user's name.
+message LogRequest { //TODO change to stream  - LogStream
+  string name = 1;
+}
+
+// The response message containing the greetings
+message LogReply {
+  string message = 1;
+}

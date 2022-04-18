@@ -34,7 +34,21 @@ var (
 )
 
 type simulator struct {
-	tempSensorsAmount int
+	sampleSizes float64
+
+	tempSensorsAmount     int
+	humiditySensorsAmount int
+}
+
+func newSimulator(ctx context.Context, sampleSizes float64, tempSensorsAmount int, humiditySensorsAmount int) (*simulator, io.Reader) {
+	simulator := new(simulator)
+	simulator.tempSensorsAmount = tempSensorsAmount
+	simulator.humiditySensorsAmount = humiditySensorsAmount
+	simulator.sampleSizes = sampleSizes
+	pipeReader, pipeWriter := io.Pipe()
+	go simulator.run(ctx, pipeWriter, sampleSizes)
+
+	return simulator, pipeReader
 }
 
 // simulateMode starts processor in simulation mode -
@@ -52,6 +66,10 @@ func (s *simulator) run(ctx context.Context, writer io.Writer, sampleSizes float
 			for i := range tempSensors {
 				writer.Write([]byte(tempSensors[i]))
 			}
+			humiditySensors := generateHumiditySensors(s.humiditySensorsAmount)
+			for i := range humiditySensors {
+				writer.Write([]byte(humiditySensors[i]))
+			}
 		}
 
 		temps := generateTemps(80.0, 30.0, 500000, s.tempSensorsAmount) // 100000 samples for each temp sensor
@@ -59,16 +77,20 @@ func (s *simulator) run(ctx context.Context, writer io.Writer, sampleSizes float
 			writer.Write([]byte(temps[i]))
 		}
 
-		/*
-			temps := generateTemps(80.0, 30.0, 1000, s.tempSensorsAmount) // 100000 samples for each temp sensor
-			for i := range temps {
-				writer.Write([]byte(temps[i]))
-			}
-		*/
+		hums := generateHumidity(80.0, 30.0, 500000, s.humiditySensorsAmount) // 100000 samples for each temp sensor
+		for i := range hums {
+			writer.Write([]byte(hums[i]))
+		}
 	}
 }
 
 func NewTempeartureSensorReplacementSet() map[string]string {
+	m := make(map[string]string)
+	m["N"] = ""
+	return m
+}
+
+func NewHumiditySensorReplacementSet() map[string]string {
 	m := make(map[string]string)
 	m["N"] = ""
 	return m
@@ -148,6 +170,20 @@ func generateTemps(temperature float64, sigma float64, sampleSize int, sensors i
 	}
 
 	return temps
+}
+
+func generateHumiditySensors(amount int) []string {
+	var humiditySensors []string = make([]string, amount)
+	var tr map[string]string
+	var humiditySensor string
+	for i := 1; i < amount+1; i++ {
+		tr = NewHumiditySensorReplacementSet()
+		tr["N"] = fmt.Sprintf("%d", i)
+		humiditySensor = generateInput(humiditySkeletonSensor, tr)
+		humiditySensors = append(humiditySensors, humiditySensor)
+	}
+
+	return humiditySensors
 }
 
 func generateHumidity(humidity float64, sigma float64, sampleSize int, sensors int) []string {
