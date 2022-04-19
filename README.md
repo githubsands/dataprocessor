@@ -3,9 +3,9 @@
 data-processing processes data in either batches or streams depending on the sensor noted in a received log event
 currently the program can be ran with terminal input or simulation input
 
-to run with simulation input: `data-processing -simulation true -sensors 5 -samples 50`
+to run with simulation input: `data-processing -simulation true -sensors 5 -samples 10`
 
-this creates a total of 10 sensors: 5 temperature, 5 humidity and 250(5*5) samples. it then sends them to the processor
+this creates a total of 10 sensors: 5 temperature, 5 humidity and 250(5*5*10) samples. it then sends them to the processor
 through a io pipe and outputs the logs to `/log/*`
 
 currently the program can handle 100,000 samples per batch with a total of 5 batches
@@ -28,5 +28,6 @@ currently the distribution curve that generates temp and humidity events needs t
 - [ ]TODO: Program needs to beable to handle a change in reference
 - [ ]TODO: Swap fileIO with networkIO for incoming logs
 - [ ]TODO: Streamers need to reject all future logs if its log has already been processed
+- [ ]Fix main.go waitgroups
 
 ....and more
