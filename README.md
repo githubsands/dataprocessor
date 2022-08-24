@@ -1,7 +1,13 @@
 # data-processing
 
+## Intention:
+
+a proof of art, research, and processing of the [data-intensive applications book](https://dataintensive.net/)
+
+## The application:
+
 data-processing processes data in either batches or streams depending on the sensor noted in a received log event
-currently the program can be ran with terminal input or simulation input
+currently the program can be ran with terminal input or simulation input.
 
 to run with simulation input: `data-processing -simulation true -sensors 5 -samples 10`
 
@@ -17,7 +23,7 @@ future changes are to address swapping local input with network input as noted i
 
 currently the distribution curve that generates temp and humidity events needs to be tweaked to see all possible outputs (discard, very precise, etc..)
 
-## Improvements:
+## Future Improvements:
 
 - [ ]TODO: Don't use a channel and a ring buffer use either or
 - [ ]TODO: If using a ring buffer possibly use atomics over mutexes in a custom ring buffer implementaion
